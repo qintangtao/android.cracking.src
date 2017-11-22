@@ -483,6 +483,12 @@ int main(int argc, char** argv)
 	char *host_process, *inject_lib, *func_name, *func_params;
 	pid_t target_pid;
 
+	if (argc <= 3)
+	{
+		printf("inject host_process inject_lib func_name func_params\n");
+		return -1;
+	}
+
 	if (argc > 1)
 	{
 		host_process = argv[1];
