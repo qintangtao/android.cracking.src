@@ -592,7 +592,7 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 
 
 void print_usage(char** argv) {
-	fprintf(stderr, "error usage: %s -p PID [-P PROCNAME] -l LIBNAME -f FUNCTION -s FUNCPARAM\n", argv[0]);
+	fprintf(stderr, "error usage: %s -p PID [-P PROCNAME] -l LIBNAME [-f FUNCTION] [-s FUNCPARAM]\n", argv[0]);
 }
 
 void print_arg(const char *arg_name, const char *arg_val) {
@@ -607,7 +607,7 @@ int main(int argc, char** argv)
 	pid_t target_pid = -1;
 	char *proc_name = NULL;
 	char *lib_path = NULL;
-	char *func_name = NULL;
+	char *func_name = "hook_entry";
 	char *func_params = "";
 
 	int opt;
@@ -642,7 +642,7 @@ int main(int argc, char** argv)
 	if (proc_name != NULL && target_pid < 0)
 		target_pid = find_pid_of(proc_name);
 
-	if (target_pid <= 0 || lib_path == NULL || func_name == NULL)  {
+	if (target_pid <= 0 || lib_path == NULL)  {
 		print_usage(argv);
 		exit(0);
 	}
