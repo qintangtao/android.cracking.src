@@ -2,9 +2,11 @@
 #include <stdlib.h>
 #include <dirent.h>
 #include <dlfcn.h>
+#include <elf.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
+#include <sys/uio.h>
 #include <android/log.h>
 
 
@@ -12,8 +14,27 @@
 
 #define CPSR_T_MASK        ( 1u << 5 )
 
+
+#if defined(__aarch64__)
+#define pt_regs user_pt_regs
+#define uregs regs  
+#define ARM_pc  pc  
+#define ARM_sp  sp  
+#define ARM_cpsr    pstate  
+#define ARM_lr      regs[30]  
+#define ARM_r0      regs[0]
+#define PTRACE_GETREGS PTRACE_GETREGSET  
+#define PTRACE_SETREGS PTRACE_SETREGSET 
+#endif
+
+
+#if defined(__aarch64__)
+const char *libc_path = "/system/lib64/libc.so";
+const char *linker_path = "/system/bin/linker64";
+#else
 const char *libc_path = "/system/lib/libc.so";
 const char *linker_path = "/system/bin/linker";
+#endif
 
 #if ENABLE_DEBUG
 	#define TAG "INJECT"
@@ -30,27 +51,26 @@ int ptrace_readdata(pid_t pid, uint8_t *src, uint8_t *buf, size_t size)
 {
 	uint32_t i, j, remain;
 	uint8_t *laddr;
+	size_t align = sizeof(long);
 
 	union u {
 		long val;
 		char chars[sizeof(long)];
 	} d;
 
-	j = size / 4;
-	remain = size % 4;
+	j = size / align;
+	remain = size % align;
 
 	laddr = buf;
 
-	for ( i = 0; i < j; i++ )
-	{
+	for ( i = 0; i < j; i++ ) {
 		d.val = (long)ptrace(PTRACE_PEEKTEXT, pid, src, 0);
-		memcpy(laddr, d.chars, 4);
-		src += 4;
-		laddr += 4;
+		memcpy(laddr, d.chars, align);
+		src += align;
+		laddr += align;
 	}
 
-	if ( remain > 0 )
-	{
+	if ( remain > 0 ) {
 		d.val = (long)ptrace(PTRACE_PEEKTEXT, pid, src, 0);
 		memcpy(laddr, d.chars, remain);
 	}
@@ -62,33 +82,31 @@ int ptrace_writedata(pid_t pid, uint8_t *dest, uint8_t *data, size_t size)
 {
 	uint32_t i, j, remain;
 	uint8_t *laddr;
+	size_t align = sizeof(long);
 
 	union u {
 		long val;
 		char chars[sizeof(long)];
 	} d;
 
-	j = size / 4;
-	remain = size % 4;
+	j = size / align;
+	remain = size % align;
 
 	laddr = data;
 
-	for ( i = 0; i < j; i++ )
-	{
-		memcpy(d.chars, laddr, 4);
+	for ( i = 0; i < j; i++ ) {
+		memcpy(d.chars, laddr, align);
 		ptrace(PTRACE_POKETEXT, pid, dest, d.val);
-		dest += 4;
-		laddr += 4;
+		dest += align;
+		laddr += align;
 	}
 
-	if ( remain > 0 )
-	{
+	if ( remain > 0 ) {
 		//d.val = 0;
 		//memcpy(d.chars, laddr, remain);
 		//采用下面这种方式不会修改后面几个字节的数据
 		d.val = (long)ptrace(PTRACE_PEEKTEXT, pid, dest, 0);
-		for ( i = 0; i < remain; i++ )
-		{
+		for ( i = 0; i < remain; i++ ) {
 			d.chars[i] = *laddr++;
 		}
 		ptrace(PTRACE_POKETEXT, pid, dest, d.val);
@@ -105,28 +123,56 @@ int ptrace_writestring(pid_t pid, uint8_t *dest, const char *str)
 
 int ptrace_getregs(pid_t pid, struct pt_regs *regs)
 {
-	if (ptrace(PTRACE_GETREGS, pid, NULL, regs) < 0)
-	{
+#if defined(__aarch64__)
+
+	struct iovec ioVec;
+	ioVec.iov_base = regs;
+	ioVec.iov_len = sizeof(*regs);
+	if (ptrace(PTRACE_GETREGS, pid, NT_PRSTATUS, &ioVec) < 0) {
 		perror("ptrace_getregs: Can not get register values");
 		return -1;
 	}
+
+#else
+
+	if (ptrace(PTRACE_GETREGS, pid, NULL, regs) < 0) {
+		perror("ptrace_getregs: Can not get register values");
+		return -1;
+	}
+
+#endif
+
 	return 0;
 }
 
 int ptrace_setregs(pid_t pid, struct pt_regs *regs)
 {
-	if (ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0)
-	{
+#if defined(__aarch64__)
+	
+	struct iovec ioVec;
+	ioVec.iov_base = regs;
+	ioVec.iov_len = sizeof(*regs);
+	if (ptrace(PTRACE_SETREGS, pid, NT_PRSTATUS, &ioVec) < 0) {
 		perror("ptrace_setregs: Can not set register values");
 		return -1;
 	}
+
+#else
+
+	if (ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) {
+		perror("ptrace_setregs: Can not set register values");
+		return -1;
+	}
+	return 0;
+
+#endif
+
 	return 0;
 }
 
 int ptrace_continue(pid_t pid)
 {
-	if (ptrace(PTRACE_CONT, pid, NULL, 0) < 0)
-	{
+	if (ptrace(PTRACE_CONT, pid, NULL, 0) < 0) {
 		perror("ptrace_continue");
 		return -1;
 	}
@@ -135,55 +181,60 @@ int ptrace_continue(pid_t pid)
 
 int ptrace_attach(pid_t pid)
 {
-	if (ptrace(PTRACE_ATTACH, pid, NULL, 0) < 0)
-	{
+	int stat = 0;
+
+	if (ptrace(PTRACE_ATTACH, pid, NULL, 0) < 0) {
 		perror("ptrace_attach");
 		return -1;
 	}
 
-	waitpid(pid, NULL, WUNTRACED);
-
-	if (ptrace(PTRACE_SYSCALL, pid, NULL, 0) < 0)
-	{
+#if 1
+	waitpid(pid, &stat, WUNTRACED);
+#else
+	if (ptrace(PTRACE_SYSCALL, pid, NULL, 0) < 0) {
 		perror("ptrace_syscall");
 		return -1;
 	}
 
 	waitpid(pid, NULL, WUNTRACED);
+#endif
 
 	return 0;
 }
 
 int ptrace_detach(pid_t pid)
 {
-	if (ptrace(PTRACE_DETACH, pid, NULL, 0) < 0)
-	{
+	if (ptrace(PTRACE_DETACH, pid, NULL, 0) < 0) {
 		perror("ptrace_detach");
 		return -1;
 	}
 	return 0;
 }
 
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
 
-int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t params_num, struct pt_regs *regs)
+int ptrace_call(pid_t pid, uintptr_t addr, long *params, uint32_t params_num, struct pt_regs *regs)
 {
 	uint32_t i;
+	int stat = 0;
 
-	for (i = 0; i < params_num && i < 4; i++)
-	{
+#if defined(__arm__)
+	int params_num_registers = 4;
+#else //__aarch64__
+	int params_num_registers = 8;
+#endif
+
+	for (i = 0; i < params_num && i < params_num_registers; i++) {
 		regs->uregs[i] = params[i];
 	}
 
-	if ( i < params_num )
-	{
+	if ( i < params_num ) {
 		regs->ARM_sp -= (params_num - i) * sizeof(long);
 		ptrace_writedata(pid, (uint8_t *)regs->ARM_sp, (uint8_t *)&params[i], (params_num - i) * sizeof(long));
 	}
 
 	regs->ARM_pc = addr;
-	if ( regs->ARM_pc & 1 )
-	{
+	if ( regs->ARM_pc & 1 ) {
 		/* thumb
 		判断最后一位:
 			1是thumb指令集
@@ -191,9 +242,7 @@ int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t params_num, str
 		*/
 		regs->ARM_pc &= (~1u);
 		regs->ARM_cpsr |= CPSR_T_MASK;
-	}
-	else
-	{
+	} else {
 		/* arm */	
 		regs->ARM_cpsr &= ~CPSR_T_MASK;
 	}
@@ -201,19 +250,26 @@ int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t params_num, str
 	regs->ARM_lr = 0;
 
 	if (ptrace_setregs(pid, regs) == -1 ||
-		ptrace_continue(pid) == -1)
-	{
+			ptrace_continue(pid) == -1) {
+		printf("ptrace_setregs or ptrace_continue error.");
 		return -1;
 	}
 
-	waitpid(pid, NULL, WUNTRACED);
+	waitpid(pid, &stat, WUNTRACED);
+	while ( stat != 0xb7f ) {
+		if (ptrace_continue(pid) == -1) {
+			printf("ptrace_continue error.");
+			return -1;
+		}
+		waitpid(pid, &stat, WUNTRACED);
+	}
 
 	return 0;
 }
 
 #elif defined(__i386__)
 
-int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t params_num, struct pt_regs *regs)
+int ptrace_call(pid_t pid, uintptr_t addr, long *params, uint32_t params_num, struct pt_regs *regs)
 {
 	int stat = 0;
 
@@ -223,19 +279,18 @@ int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t params_num, str
 	regs->eip = addr;
 
 	if (ptrace_setregs(pid, regs) == -1 ||
-		ptrace_continue(pid) == -1)
-	{
+			ptrace_continue(pid) == -1) {
+		printf("ptrace_setregs or ptrace_continue error.");
 		return -1;
 	}
 
-	waitpid(pid, NULL, WUNTRACED);
-	while ( stat != 0xb7f )
-	{
-		if (ptrace_continue(pid) == -1)
-		{
+	waitpid(pid, &stat, WUNTRACED);
+	while ( stat != 0xb7f ) {
+		if (ptrace_continue(pid) == -1) {
+			printf("ptrace_continue error.");
 			return -1;
 		}
-		waitpid(pid, NULL, WUNTRACED);
+		waitpid(pid, &stat, WUNTRACED);
 	}
 
 	return 0;
@@ -249,7 +304,7 @@ int ptrace_call(pid_t pid, uint32_t addr, long *params, uint32_t params_num, str
 
 long ptrace_retval(struct pt_regs *regs)
 {
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
 	return regs->ARM_r0;
 #elif defined(__i386__)
 	return regs->eax;
@@ -260,7 +315,7 @@ long ptrace_retval(struct pt_regs *regs)
 
 long ptrace_ip(struct pt_regs *regs)
 {
-#if defined(__arm__)
+#if defined(__arm__) || defined(__aarch64__)
 	return regs->ARM_pc;
 #elif defined(__i386__)
 	return regs->eip;
@@ -273,12 +328,17 @@ int ptrace_call_wrapper(pid_t target_pid, const char *func_name, void *func_addr
 {
 	printf("[+]Calling %s in target process.\n", func_name);
 
-	if (ptrace_call(target_pid, (uint32_t)func_addr, params, param_num, regs) == -1)
+	if (ptrace_call(target_pid, (uintptr_t)func_addr, params, param_num, regs) == -1)
 		return -1;		
 	if (ptrace_getregs(target_pid, regs) == -1)
 		return -1;
 
-	printf("[+]return value=%x, pc=%x\n", (uint32_t)ptrace_retval(regs), (uint32_t)ptrace_ip(regs));
+#if defined(__aarch64__)
+	printf("[+]return value=%lx, pc=%lx\n", (uintptr_t)ptrace_retval(regs), (uintptr_t)ptrace_ip(regs));
+#else
+	printf("[+]return value=%x, pc=%x\n", (uintptr_t)ptrace_retval(regs), (uintptr_t)ptrace_ip(regs));
+#endif
+
 	return 0;
 }
 
@@ -297,14 +357,9 @@ void* get_module_base(pid_t pid, const char* module_name)
 
 
 	fp = fopen(filename, "r");
-	if ( fp != NULL )
-	{
-		//printf("open file %s \n", filename);
-
-		while ( fgets(line, sizeof(line), fp) )
-		{
-			if (strstr(line, module_name))
-			{
+	if ( fp != NULL ) {
+		while ( fgets(line, sizeof(line), fp) ) {
+			if (strstr(line, module_name)) {
 				pch = strtok(line, "-");
 				addr = strtoul(pch, NULL, 16);
 
@@ -314,9 +369,8 @@ void* get_module_base(pid_t pid, const char* module_name)
 				break;
 			}
 		}
-	}
-	else
-	{
+		fclose(fp);
+	} else {
 		printf("open file %s failed. \n", filename);
 	}
 
@@ -332,11 +386,10 @@ void* get_remote_addr(pid_t target_id, const char* module_name, void* local_addr
 
 	//printf("[+] get_remote_addr: local[%x], remote[%x]\n", (uint32_t)local_handle, (uint32_t)remote_handle);
 
-	ret_addr = (void *)((uint32_t)local_addr + (uint32_t)remote_handle - (uint32_t)local_handle);
+	ret_addr = (void *)((uintptr_t)local_addr + (uintptr_t)remote_handle - (uintptr_t)local_handle);
 
 #if defined(__i386__)
-	if (!strcmp(module_name, libc_path))
-	{
+	if (!strcmp(module_name, libc_path)) {
 		ret_addr += 2;
 	}
 #endif
@@ -394,20 +447,16 @@ int find_pid_of(const char *process_name)
 	if ( dir == NULL )
 		return -1;
 
-	while ( (entry = readdir(dir)) != NULL )
-	{
+	while ( (entry = readdir(dir)) != NULL ) {
 		id = atoi(entry->d_name);
-		if ( id != 0 )
-		{
+		if ( id != 0 ) {
 			sprintf(filename, "/proc/%d/cmdline", id);
 			fp = fopen(filename, "r");
-			if ( fp )
-			{
+			if ( fp ) {
 				fgets(cmdline, sizeof(cmdline), fp);
 				fclose(fp);
 
-				if ( strcmp(process_name, cmdline) == 0 )
-				{
+				if ( strcmp(process_name, cmdline) == 0 ) {
 					pid = id;
 					break;
 				}
@@ -447,9 +496,9 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 	printf("[+] Injecting process: %d\n", target_pid);
 
 	if (ptrace_attach(target_pid) == -1)
-		return EXIT_SUCCESS;
-
-	if (ptrace_getregs(target_pid, &regs))
+		return -1;
+#if 1
+	if (ptrace_getregs(target_pid, &regs) == -1)
 		return -1;
 
 	memcpy(&original_regs, &regs, sizeof(regs));
@@ -457,15 +506,6 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 	mmap_addr = get_remote_addr(target_pid, libc_path, (void *)mmap);
 	
 	printf( "[+] from library %s get func addr, mmap: %x\n", libc_path, (uint32_t)mmap_addr);
-
-	dlopen_addr = get_remote_addr(target_pid, linker_path, (void *)dlopen);
-	dlsym_addr = get_remote_addr(target_pid, linker_path, (void *)dlsym);
-	dlclose_addr = get_remote_addr(target_pid, linker_path, (void *)dlclose);
-	dlerror_addr = get_remote_addr(target_pid, linker_path, (void *)dlerror);
-
-	printf( "[+] from library %s get func addr, dlopen: %x, dlsym: %x, dlclose: %x,dlerror: %x\n", 
-		linker_path, (uint32_t)dlopen_addr, (uint32_t)dlsym_addr, (uint32_t)dlclose_addr, (uint32_t)dlerror_addr);
-
 
 	//printf("[+] Calling mmap in target process.\n");
 	params[0] = 0;	//addr
@@ -475,13 +515,21 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 	params[4] = 0; //fd
 	params[5] = 0; //offset
 
-	if (ptrace_call_wrapper(target_pid, "mmap", mmap_addr, params, 6, &regs))
+	if (ptrace_call_wrapper(target_pid, "mmap", mmap_addr, params, 6, &regs) == -1)
 		return -1;
 
 	mmap_base = (void *)ptrace_retval(&regs);
 	//printf("mmap_base=%x\n", (uint32_t)mmap_base);
 	if (mmap_base == NULL)
 		return -1;
+
+	dlopen_addr = get_remote_addr(target_pid, linker_path, (void *)dlopen);
+	dlsym_addr = get_remote_addr(target_pid, linker_path, (void *)dlsym);
+	dlclose_addr = get_remote_addr(target_pid, linker_path, (void *)dlclose);
+	dlerror_addr = get_remote_addr(target_pid, linker_path, (void *)dlerror);
+
+	printf( "[+] from library %s get func addr, dlopen: %x, dlsym: %x, dlclose: %x,dlerror: %x\n", 
+		linker_path, (uint32_t)dlopen_addr, (uint32_t)dlsym_addr, (uint32_t)dlclose_addr, (uint32_t)dlerror_addr);
 
 	printf("[+]Write library path in target process. %s\n", library_path);
 	ptrace_writestring(target_pid, mmap_base, library_path);
@@ -491,7 +539,7 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 	//printf("[+] Calling dlopen in target process.\n");
 	params[0] = (long)mmap_base;
 	params[1] = RTLD_NOW | RTLD_GLOBAL;
-	if (ptrace_call_wrapper(target_pid, "dlopen", dlopen_addr, params, 2, &regs))
+	if (ptrace_call_wrapper(target_pid, "dlopen", dlopen_addr, params, 2, &regs) == -1)
 		return -1;
 
 	so_handle = (void *)ptrace_retval(&regs);
@@ -507,7 +555,7 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 	//printf("[+] Calling dlsym in target process.\n");
 	params[0] = (long)so_handle;
 	params[1] = (long)(mmap_base+FUNCTION_NAME_ADDR_OFFSET);
-	if (ptrace_call_wrapper(target_pid, "dlsym", dlsym_addr, params, 2, &regs))
+	if (ptrace_call_wrapper(target_pid, "dlsym", dlsym_addr, params, 2, &regs) == -1)
 		return -1;
 
 	hook_entry_addr = (void *)ptrace_retval(&regs);
@@ -520,18 +568,24 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 
 	//printf("[+] Calling hook_entry in target process.\n");
 	params[0] = (long)(mmap_base+FUNCTION_PARAM_ADDR_OFFSET);
-	if (ptrace_call_wrapper(target_pid, "hook_entry", hook_entry_addr, params, 1, &regs))
+	if (ptrace_call_wrapper(target_pid, "hook_entry", hook_entry_addr, params, 1, &regs) == -1)
 		return -1;
 
 	printf("Press enter to dlclose and detach\n");
 	getchar();
 
 	//printf("[+] Calling dlclose in target process.\n");
-	params[0] = (long)so_handle;
-	if (ptrace_call_wrapper(target_pid, "dlclose_addr", dlclose_addr, params, 1, &regs))
-		return -1;
+	//params[0] = (long)so_handle;
+	//if (ptrace_call_wrapper(target_pid, "dlclose", dlclose_addr, params, 1, &regs) == -1)
+	//	return -1;
 
 	ptrace_setregs(target_pid, &original_regs);
+
+#else
+	printf("Press enter to dlclose and detach\n");
+	getchar();
+#endif
+
 	ptrace_detach(target_pid);
 
 	return 0;
