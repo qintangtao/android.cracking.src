@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <elf.h>
+#include <unistd.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
@@ -497,7 +498,7 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 
 	if (ptrace_attach(target_pid) == -1)
 		return -1;
-#if 1
+
 	if (ptrace_getregs(target_pid, &regs) == -1)
 		return -1;
 
@@ -571,28 +572,84 @@ int inject_remote_process(pid_t target_pid, const char *library_path, const char
 	if (ptrace_call_wrapper(target_pid, "hook_entry", hook_entry_addr, params, 1, &regs) == -1)
 		return -1;
 
+	//Enter 后会detach测试程序才会运行起来，否则处于暂停状态
 	printf("Press enter to dlclose and detach\n");
 	getchar();
 
+#if 0
+	//关闭后inject的so会被卸载 hook则失效
 	//printf("[+] Calling dlclose in target process.\n");
-	//params[0] = (long)so_handle;
-	//if (ptrace_call_wrapper(target_pid, "dlclose", dlclose_addr, params, 1, &regs) == -1)
-	//	return -1;
-
-	ptrace_setregs(target_pid, &original_regs);
-
-#else
-	printf("Press enter to dlclose and detach\n");
-	getchar();
+	params[0] = (long)so_handle;
+	if (ptrace_call_wrapper(target_pid, "dlclose", dlclose_addr, params, 1, &regs) == -1)
+		return -1;
 #endif
 
+	ptrace_setregs(target_pid, &original_regs);
 	ptrace_detach(target_pid);
 
 	return 0;
 }
 
+
+void print_usage(char** argv) {
+	fprintf(stderr, "error usage: %s -p PID [-P PROCNAME] -l LIBNAME -f FUNCTION -s FUNCPARAM\n", argv[0]);
+}
+
+void print_arg(const char *arg_name, const char *arg_val) {
+#if 0
+	printf("%s=%s\n", arg_name, arg_val);
+#endif
+}
+
 int main(int argc, char** argv) 
 {
+#if 1
+	pid_t target_pid = -1;
+	char *proc_name = NULL;
+	char *lib_path = NULL;
+	char *func_name = NULL;
+	char *func_params = "";
+
+	int opt;
+
+	while ((opt = getopt(argc, argv, "p:P:l:f:s:")) != -1) {
+		switch ( opt ) {
+			case 'p':
+				target_pid = strtol(optarg, NULL, 0);
+				break;
+			case 'P':
+				proc_name = strdup(optarg);
+				print_arg("proc_name", proc_name);
+				break;
+			case 'l':
+				lib_path = strdup(optarg);
+				print_arg("lib_path", lib_path);
+				break;
+			case 'f':
+				func_name = strdup(optarg);
+				print_arg("func_name", func_name);
+				break;
+			case 's':
+				func_params = strdup(optarg);
+				print_arg("func_params", func_params);
+				break;
+			default:
+				print_usage(argv);
+				exit(0);
+		}
+	}
+
+	if (proc_name != NULL && target_pid < 0)
+		target_pid = find_pid_of(proc_name);
+
+	if (target_pid <= 0 || lib_path == NULL || func_name == NULL)  {
+		print_usage(argv);
+		exit(0);
+	}
+
+	inject_remote_process(target_pid, lib_path, func_name, func_params, strlen(func_params));
+
+#else
 	char *host_process, *inject_lib, *func_name, *func_params;
 	pid_t target_pid;
 
@@ -641,6 +698,7 @@ int main(int argc, char** argv)
 	}
 
 	inject_remote_process(target_pid, inject_lib, func_name, func_params, strlen(func_params));
+#endif
 
 	return 0;
 }
