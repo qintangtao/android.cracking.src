@@ -83,12 +83,15 @@ int ptrace_writedata(pid_t pid, uint8_t *dest, uint8_t *data, size_t size)
 
 	if ( remain > 0 )
 	{
+		//d.val = 0;
+		//memcpy(d.chars, laddr, remain);
+		//采用下面这种方式不会修改后面几个字节的数据
 		d.val = (long)ptrace(PTRACE_PEEKTEXT, pid, dest, 0);
 		for ( i = 0; i < remain; i++ )
 		{
 			d.chars[i] = *laddr++;
 		}
-		ptrace(PTRACE_PEEKTEXT, pid, dest, d.val);
+		ptrace(PTRACE_POKETEXT, pid, dest, d.val);
 	}
 
 	return 0;
@@ -268,14 +271,14 @@ long ptrace_ip(struct pt_regs *regs)
 
 int ptrace_call_wrapper(pid_t target_pid, const char *func_name, void *func_addr, long *params, int param_num, struct pt_regs *regs)
 {
-	LOGD("[+]Calling %s in target process.\n", func_name);
+	printf("[+]Calling %s in target process.\n", func_name);
 
 	if (ptrace_call(target_pid, (uint32_t)func_addr, params, param_num, regs) == -1)
 		return -1;		
 	if (ptrace_getregs(target_pid, regs) == -1)
 		return -1;
 
-	LOGD("[+]Target process returned from %s, return value=%x, pc=%x\n", func_name, (uint32_t)ptrace_retval(regs), (uint32_t)ptrace_ip(regs));
+	printf("[+]return value=%x, pc=%x\n", (uint32_t)ptrace_retval(regs), (uint32_t)ptrace_ip(regs));
 	return 0;
 }
 
@@ -296,7 +299,7 @@ void* get_module_base(pid_t pid, const char* module_name)
 	fp = fopen(filename, "r");
 	if ( fp != NULL )
 	{
-		LOGD("open file %s \n", filename);
+		//printf("open file %s \n", filename);
 
 		while ( fgets(line, sizeof(line), fp) )
 		{
@@ -314,7 +317,7 @@ void* get_module_base(pid_t pid, const char* module_name)
 	}
 	else
 	{
-		LOGE("open file %s failed. \n", filename);
+		printf("open file %s failed. \n", filename);
 	}
 
 	return (void *)addr;
@@ -327,7 +330,7 @@ void* get_remote_addr(pid_t target_id, const char* module_name, void* local_addr
 	local_handle = get_module_base(-1, module_name);
 	remote_handle = get_module_base(target_id, module_name);
 
-	LOGD("[+] get_remote_addr: local[%x], remote[%x]\n", (uint32_t)local_handle, (uint32_t)remote_handle);
+	//printf("[+] get_remote_addr: local[%x], remote[%x]\n", (uint32_t)local_handle, (uint32_t)remote_handle);
 
 	ret_addr = (void *)((uint32_t)local_addr + (uint32_t)remote_handle - (uint32_t)local_handle);
 
@@ -340,6 +343,39 @@ void* get_remote_addr(pid_t target_id, const char* module_name, void* local_addr
 
 	return ret_addr;
 }
+
+int ptrace_call_mmap(pid_t target_pid, struct pt_regs *regs, long *params, long**retval)
+{
+	static void *mmap_addr = NULL;
+
+	if (mmap_addr == NULL) {
+		mmap_addr = get_remote_addr(target_pid, libc_path, (void *)mmap);
+		if (mmap_addr == NULL)
+			return -1;
+	}
+
+	if (ptrace_call_wrapper(target_pid, "mmap", mmap_addr, params, 6, regs))
+		return -1;
+
+	*retval = (long *)ptrace_retval(regs);
+
+	return 0;
+}
+/*
+int ptrace_call_dlerror(pid_t target_pid, void *func_addr, struct pt_regs *regs) 
+{
+	void *error_base;
+	char line[1024];
+
+	if (ptrace_call_wrapper(target_pid, "dlerror", func_addr, NULL, 0, &regs))
+		return -1;
+
+	error_base = (void *)ptrace_retval(&regs);
+
+	ptrace_readdata(target_pid, (uint8_t *)error_base, (uint8_t *)line, strlen(line));
+	printf("[+]ptrace_call_dlerror. %s\n", line);
+}
+*/
 
 int find_pid_of(const char *process_name)
 {
@@ -384,7 +420,20 @@ int find_pid_of(const char *process_name)
 	return pid;
 }
 
-int inject_remove_process(pid_t target_pid, const char *library_path, const char *func_name, void *param, size_t param_size)
+int print_remote_string(pid_t pid, uint8_t *src)
+{
+	char line[1024];
+
+	if (ptrace_readdata(pid, src, (uint8_t *)line, sizeof(line)))
+		return -1;
+
+	printf("ptrace_readdatastring: %s\n", line);
+
+	return 0;
+}
+
+
+int inject_remote_process(pid_t target_pid, const char *library_path, const char *func_name, void *param, size_t param_size)
 {
 #define FUNCTION_NAME_ADDR_OFFSET 0x100
 #define FUNCTION_PARAM_ADDR_OFFSET 0x200
@@ -395,9 +444,9 @@ int inject_remove_process(pid_t target_pid, const char *library_path, const char
 
 	long params[10];
 
-	LOGD("[+] Injecting process: %d\n", target_pid);
+	printf("[+] Injecting process: %d\n", target_pid);
 
-	if (ptrace_attach(target_pid) != -1)
+	if (ptrace_attach(target_pid) == -1)
 		return EXIT_SUCCESS;
 
 	if (ptrace_getregs(target_pid, &regs))
@@ -407,18 +456,18 @@ int inject_remove_process(pid_t target_pid, const char *library_path, const char
 
 	mmap_addr = get_remote_addr(target_pid, libc_path, (void *)mmap);
 	
-	LOGD( "[+] from library %s get func addr, mmap: %x\n", libc_path, (uint32_t)mmap_addr);
+	printf( "[+] from library %s get func addr, mmap: %x\n", libc_path, (uint32_t)mmap_addr);
 
 	dlopen_addr = get_remote_addr(target_pid, linker_path, (void *)dlopen);
 	dlsym_addr = get_remote_addr(target_pid, linker_path, (void *)dlsym);
 	dlclose_addr = get_remote_addr(target_pid, linker_path, (void *)dlclose);
 	dlerror_addr = get_remote_addr(target_pid, linker_path, (void *)dlerror);
 
-	LOGD( "[+] from library %s get func addr, dlopen: %x, dlsym: %x, dlclose: %x,dlerror: %x\n", 
+	printf( "[+] from library %s get func addr, dlopen: %x, dlsym: %x, dlclose: %x,dlerror: %x\n", 
 		linker_path, (uint32_t)dlopen_addr, (uint32_t)dlsym_addr, (uint32_t)dlclose_addr, (uint32_t)dlerror_addr);
 
 
-	LOGD("[+] Calling mmap in target process.\n");
+	//printf("[+] Calling mmap in target process.\n");
 	params[0] = 0;	//addr
 	params[1] = 0x4000; //size
 	params[2] = PROT_READ | PROT_WRITE | PROT_EXEC;	//prot
@@ -430,36 +479,46 @@ int inject_remove_process(pid_t target_pid, const char *library_path, const char
 		return -1;
 
 	mmap_base = (void *)ptrace_retval(&regs);
-	LOGD("mmap_base=%x\n", (uint32_t)mmap_base);
+	//printf("mmap_base=%x\n", (uint32_t)mmap_base);
+	if (mmap_base == NULL)
+		return -1;
 
-	LOGD("[+]Write library path in target process.\n");
+	printf("[+]Write library path in target process. %s\n", library_path);
 	ptrace_writestring(target_pid, mmap_base, library_path);
 
-	LOGD("[+] Calling dlopen in target process.\n");
+	print_remote_string(target_pid, (uint8_t *)(mmap_base));
+
+	//printf("[+] Calling dlopen in target process.\n");
 	params[0] = (long)mmap_base;
 	params[1] = RTLD_NOW | RTLD_GLOBAL;
 	if (ptrace_call_wrapper(target_pid, "dlopen", dlopen_addr, params, 2, &regs))
 		return -1;
 
 	so_handle = (void *)ptrace_retval(&regs);
-	LOGD("so_handle=%x\n", (uint32_t)so_handle);
+	//printf("so_handle=%x\n", (uint32_t)so_handle);
+	if (so_handle == NULL)
+		return -1;
 
-	LOGD("[+]Write function name in target process.\n");
+	printf("[+]Write function name in target process. %s\n", func_name);
 	ptrace_writestring(target_pid, mmap_base+FUNCTION_NAME_ADDR_OFFSET, func_name);
 
-	LOGD("[+] Calling dlsym in target process(get hook_entry function address).\n");
+	print_remote_string(target_pid, (uint8_t *)(mmap_base+FUNCTION_NAME_ADDR_OFFSET));
+
+	//printf("[+] Calling dlsym in target process.\n");
 	params[0] = (long)so_handle;
-	params[1] = (long)mmap_base+FUNCTION_NAME_ADDR_OFFSET;
+	params[1] = (long)(mmap_base+FUNCTION_NAME_ADDR_OFFSET);
 	if (ptrace_call_wrapper(target_pid, "dlsym", dlsym_addr, params, 2, &regs))
 		return -1;
 
 	hook_entry_addr = (void *)ptrace_retval(&regs);
-	LOGD("hook_entry_addr=%x\n", (uint32_t)so_handle);
+	//printf("hook_entry_addr=%x\n", (uint32_t)so_handle);
+	if (hook_entry_addr == NULL)
+		return -1;
 
-	LOGD("[+]Write params in target process.\n");
+	printf("[+]Write params in target process.\n");
 	ptrace_writestring(target_pid, mmap_base+FUNCTION_PARAM_ADDR_OFFSET, (const char *)param);
 
-	LOGD("[+] Calling hook_entry in target process.\n");
+	//printf("[+] Calling hook_entry in target process.\n");
 	params[0] = (long)(mmap_base+FUNCTION_PARAM_ADDR_OFFSET);
 	if (ptrace_call_wrapper(target_pid, "hook_entry", hook_entry_addr, params, 1, &regs))
 		return -1;
@@ -467,7 +526,7 @@ int inject_remove_process(pid_t target_pid, const char *library_path, const char
 	printf("Press enter to dlclose and detach\n");
 	getchar();
 
-	LOGD("[+] Calling dlclose in target process.\n");
+	//printf("[+] Calling dlclose in target process.\n");
 	params[0] = (long)so_handle;
 	if (ptrace_call_wrapper(target_pid, "dlclose_addr", dlclose_addr, params, 1, &regs))
 		return -1;
@@ -483,7 +542,13 @@ int main(int argc, char** argv)
 	char *host_process, *inject_lib, *func_name, *func_params;
 	pid_t target_pid;
 
-	if (argc <= 3)
+	printf("params count is %d\n", argc);
+	for (int i = 0; i < argc; ++i)
+	{
+		printf("params[%d]=%s\n", i, argv[i]);
+	}
+
+	if (argc < 3)
 	{
 		printf("inject host_process inject_lib func_name func_params\n");
 		return -1;
@@ -515,13 +580,13 @@ int main(int argc, char** argv)
 
 
 	target_pid = find_pid_of(host_process);
-	if (target_pid == 0)
+	if (target_pid <= 0)
 	{
 		printf("not found process id.\n");
 		return -1;
 	}
 
-	inject_remove_process(target_pid, inject_lib, func_name, func_params, strlen(func_params));
+	inject_remote_process(target_pid, inject_lib, func_name, func_params, strlen(func_params));
 
 	return 0;
 }
