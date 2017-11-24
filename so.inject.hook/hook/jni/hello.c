@@ -21,6 +21,7 @@
 	#define LOGE(...)
 #endif
 
+#if 0
 int (*old_fopen)(const char * l, const char * r, unsigned int size) = 0;
 
 int new_fopen(const char * l, const char * r, unsigned int size)
@@ -35,7 +36,7 @@ int new_fopen(const char * l, const char * r, unsigned int size)
 	return old_fopen(l, r, size);
 }
 
-/*
+#else
 
 FILE * (*old_fopen)(const char * path, const char * mode) = 0;
 
@@ -49,7 +50,9 @@ FILE * new_fopen(const char * path, const char * mode)
 	}
 
 	return old_fopen(path, mode);
-}*/
+}
+
+#endif
 
 void* get_module_base(pid_t pid, const char* module_name)
 {
@@ -99,7 +102,7 @@ int HookImportFunction(const char *lib_path, const char *func_name)
 	Elf32_Ehdr ehdr;
 	Elf32_Shdr shdr;
 
-	old_fopen = strncmp;
+	old_fopen = fopen;
 	LOGD("old fopen = %p\n", old_fopen);
 
 	base_addr = get_module_base(getpid(), lib_path);
@@ -175,6 +178,6 @@ int HookImportFunction(const char *lib_path, const char *func_name)
 int hook_entry(char *a) {
 	LOGD("Hook success, pid=%d\n", getpid());
 	LOGD("Hello %s\n", a);
-	//HookImportFunction("/data/data/com.lzx.iteam/lib/libjpush213.so", "strncmp");
+	HookImportFunction("/data/local/tmp/target", "fopen");
 	return 0;
 }

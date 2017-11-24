@@ -596,7 +596,7 @@ void print_usage(char** argv) {
 }
 
 void print_arg(const char *arg_name, const char *arg_val) {
-#if 0
+#if 1
 	printf("%s=%s\n", arg_name, arg_val);
 #endif
 }
