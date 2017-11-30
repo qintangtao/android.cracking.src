@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <android/log.h>
+#include "TKHooklib.h"
 
 #define ENABLE_DEBUG		1
 #if ENABLE_DEBUG
@@ -175,9 +176,18 @@ int HookImportFunction(const char *lib_path, const char *func_name)
     return 0;
 }
 
+
+
+
 int hook_entry(char *a) {
 	LOGD("Hook success, pid=%d\n", getpid());
 	LOGD("Hello %s\n", a);
-	HookImportFunction("/data/local/tmp/target", "fopen");
+	//HookImportFunction("/data/local/tmp/target", "fopen");
+
+	old_fopen = fopen;
+	void* OldFunc = NULL;
+	TK_InlineHookFunction(fopen, new_fopen, &OldFunc);
+
+
 	return 0;
 }
