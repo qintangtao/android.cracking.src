@@ -21,7 +21,7 @@
 
     .prologue
     .line 8
-    const/16 v0, 0xfa0
+    const/16 v0, 0x7d0
 
     sput v0, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
 
@@ -93,7 +93,7 @@
 
     move-result v0
 
-    if-nez v0, :cond_13
+    if-nez v0, :cond_41
 
     .line 43
     invoke-virtual {p1}, Ljava/lang/String;->length()I
@@ -102,30 +102,19 @@
 
     sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
 
-    if-le v0, v1, :cond_14
+    if-le v0, v1, :cond_3c
 
     .line 44
-    if-eqz p2, :cond_13
-
-    .line 45
-    invoke-interface {p2, p0, p1}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
-
-    .line 63
-    :cond_13
-    return-void
-
-    .line 48
-    :cond_14
     const/4 v0, 0x0
 
-    :goto_15
+    :goto_f
     invoke-virtual {p1}, Ljava/lang/String;->length()I
 
     move-result v1
 
-    if-ge v0, v1, :cond_13
+    if-ge v0, v1, :cond_41
 
-    .line 49
+    .line 45
     sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
 
     add-int/2addr v1, v0
@@ -134,12 +123,12 @@
 
     move-result v2
 
-    if-ge v1, v2, :cond_34
+    if-ge v1, v2, :cond_2e
 
-    .line 50
-    if-eqz p2, :cond_30
+    .line 46
+    if-eqz p2, :cond_2a
 
-    .line 51
+    .line 47
     sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
 
     add-int/2addr v1, v0
@@ -150,20 +139,20 @@
 
     invoke-interface {p2, p0, v1}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
 
-    .line 48
-    :cond_30
-    :goto_30
+    .line 44
+    :cond_2a
+    :goto_2a
     sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
 
     add-int/2addr v0, v1
 
-    goto :goto_15
+    goto :goto_f
 
-    .line 55
-    :cond_34
-    if-eqz p2, :cond_30
+    .line 51
+    :cond_2e
+    if-eqz p2, :cond_2a
 
-    .line 56
+    .line 52
     invoke-virtual {p1}, Ljava/lang/String;->length()I
 
     move-result v1
@@ -174,5 +163,16 @@
 
     invoke-interface {p2, p0, v1}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
 
-    goto :goto_30
+    goto :goto_2a
+
+    .line 58
+    :cond_3c
+    if-eqz p2, :cond_41
+
+    .line 59
+    invoke-interface {p2, p0, p1}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
+
+    .line 63
+    :cond_41
+    return-void
 .end method

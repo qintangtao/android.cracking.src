@@ -5,7 +5,7 @@ import android.util.Log;
 
 public class LogUtil {
 
-    private static int LOG_MAXLENGTH = 4000;
+    private static int LOG_MAXLENGTH = 2000;
 
     private interface OnCallback {
         void onMessage(String TAG, String msg);
@@ -41,10 +41,6 @@ public class LogUtil {
     static void split(String tag, String msg, OnCallback callback) {
         if (!TextUtils.isEmpty(msg)) {
             if (msg.length() > LOG_MAXLENGTH) {
-                if (callback != null) {
-                    callback.onMessage(tag, msg);
-                }
-            } else {
                 for (int i = 0; i < msg.length(); i += LOG_MAXLENGTH) {
                     if (i + LOG_MAXLENGTH < msg.length()) {
                         if (callback != null) {
@@ -57,6 +53,10 @@ public class LogUtil {
                                     msg.substring(i, msg.length()));
                         }
                     }
+                }
+            } else {
+                if (callback != null) {
+                    callback.onMessage(tag, msg);
                 }
             }
         }
