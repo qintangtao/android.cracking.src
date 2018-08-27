@@ -85,94 +85,155 @@
 .end method
 
 .method static split(Ljava/lang/String;Ljava/lang/String;Lcom/qin/log/LogUtil$OnCallback;)V
-    .registers 6
+    .registers 8
 
     .prologue
+    const/4 v0, 0x0
+
     .line 42
     invoke-static {p1}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
 
-    move-result v0
-
-    if-nez v0, :cond_41
-
-    .line 43
-    invoke-virtual {p1}, Ljava/lang/String;->length()I
-
-    move-result v0
-
-    sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
-
-    if-le v0, v1, :cond_3c
-
-    .line 44
-    const/4 v0, 0x0
-
-    :goto_f
-    invoke-virtual {p1}, Ljava/lang/String;->length()I
-
     move-result v1
 
-    if-ge v0, v1, :cond_41
+    if-nez v1, :cond_83
+
+    if-eqz p2, :cond_83
+
+    .line 43
+    const-string v1, "#%s#"
+
+    const/4 v2, 0x1
+
+    new-array v2, v2, [Ljava/lang/Object;
+
+    invoke-static {}, Ljava/lang/System;->currentTimeMillis()J
+
+    move-result-wide v3
+
+    invoke-static {v3, v4}, Ljava/lang/String;->valueOf(J)Ljava/lang/String;
+
+    move-result-object v3
+
+    aput-object v3, v2, v0
+
+    invoke-static {v1, v2}, Ljava/lang/String;->format(Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/String;
+
+    move-result-object v1
 
     .line 45
-    sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
-
-    add-int/2addr v1, v0
-
     invoke-virtual {p1}, Ljava/lang/String;->length()I
 
     move-result v2
 
-    if-ge v1, v2, :cond_2e
+    sget v3, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
+
+    if-le v2, v3, :cond_6f
 
     .line 46
-    if-eqz p2, :cond_2a
-
-    .line 47
-    sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
-
-    add-int/2addr v1, v0
-
-    invoke-virtual {p1, v0, v1}, Ljava/lang/String;->substring(II)Ljava/lang/String;
-
-    move-result-object v1
-
-    invoke-interface {p2, p0, v1}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
-
-    .line 44
-    :cond_2a
-    :goto_2a
-    sget v1, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
-
-    add-int/2addr v0, v1
-
-    goto :goto_f
-
-    .line 51
-    :cond_2e
-    if-eqz p2, :cond_2a
-
-    .line 52
+    :goto_24
     invoke-virtual {p1}, Ljava/lang/String;->length()I
 
-    move-result v1
+    move-result v2
 
-    invoke-virtual {p1, v0, v1}, Ljava/lang/String;->substring(II)Ljava/lang/String;
+    if-ge v0, v2, :cond_83
 
-    move-result-object v1
+    .line 47
+    sget v2, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
 
-    invoke-interface {p2, p0, v1}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
+    add-int/2addr v2, v0
 
-    goto :goto_2a
+    invoke-virtual {p1}, Ljava/lang/String;->length()I
 
-    .line 58
-    :cond_3c
-    if-eqz p2, :cond_41
+    move-result v3
+
+    if-ge v2, v3, :cond_52
+
+    .line 48
+    new-instance v2, Ljava/lang/StringBuilder;
+
+    invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
+
+    invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    sget v3, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
+
+    add-int/2addr v3, v0
+
+    invoke-virtual {p1, v0, v3}, Ljava/lang/String;->substring(II)Ljava/lang/String;
+
+    move-result-object v3
+
+    invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v2
+
+    invoke-interface {p2, p0, v2}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
+
+    .line 46
+    :goto_4e
+    sget v2, Lcom/qin/log/LogUtil;->LOG_MAXLENGTH:I
+
+    add-int/2addr v0, v2
+
+    goto :goto_24
+
+    .line 51
+    :cond_52
+    new-instance v2, Ljava/lang/StringBuilder;
+
+    invoke-direct {v2}, Ljava/lang/StringBuilder;-><init>()V
+
+    invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    invoke-virtual {p1}, Ljava/lang/String;->length()I
+
+    move-result v3
+
+    invoke-virtual {p1, v0, v3}, Ljava/lang/String;->substring(II)Ljava/lang/String;
+
+    move-result-object v3
+
+    invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v2
+
+    invoke-virtual {v2}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v2
+
+    invoke-interface {p2, p0, v2}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
+
+    goto :goto_4e
+
+    .line 56
+    :cond_6f
+    new-instance v0, Ljava/lang/StringBuilder;
+
+    invoke-direct {v0}, Ljava/lang/StringBuilder;-><init>()V
+
+    invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v0
+
+    invoke-virtual {v0, p1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
+
+    move-result-object v0
+
+    invoke-virtual {v0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
+
+    move-result-object v0
+
+    invoke-interface {p2, p0, v0}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
 
     .line 59
-    invoke-interface {p2, p0, p1}, Lcom/qin/log/LogUtil$OnCallback;->onMessage(Ljava/lang/String;Ljava/lang/String;)V
-
-    .line 63
-    :cond_41
+    :cond_83
     return-void
 .end method

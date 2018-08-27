@@ -39,25 +39,21 @@ public class LogUtil {
     }
 
     static void split(String tag, String msg, OnCallback callback) {
-        if (!TextUtils.isEmpty(msg)) {
+        if (!TextUtils.isEmpty(msg) && callback != null) {
+            String header = String.format("#%s#",
+                    String.valueOf(System.currentTimeMillis()));
             if (msg.length() > LOG_MAXLENGTH) {
                 for (int i = 0; i < msg.length(); i += LOG_MAXLENGTH) {
                     if (i + LOG_MAXLENGTH < msg.length()) {
-                        if (callback != null) {
-                            callback.onMessage(tag,
-                                    msg.substring(i, i + LOG_MAXLENGTH));
-                        }
+                        callback.onMessage(tag,
+                                header + msg.substring(i, i + LOG_MAXLENGTH));
                     } else {
-                        if (callback != null) {
-                            callback.onMessage(tag,
-                                    msg.substring(i, msg.length()));
-                        }
+                        callback.onMessage(tag,
+                                header + msg.substring(i, msg.length()));
                     }
                 }
             } else {
-                if (callback != null) {
-                    callback.onMessage(tag, msg);
-                }
+                callback.onMessage(tag, header + msg);
             }
         }
     }
